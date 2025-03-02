@@ -1,0 +1,24 @@
+[Unit]
+Description=The List Bot for Discord
+After=network.target
+
+[Service]
+Type=simple
+User=your_username
+Group=your_username
+WorkingDirectory=/opt/thelistbot
+ExecStart=/opt/thelistbot/thelistbot-linux-amd64
+Restart=on-failure
+RestartSec=10
+Environment=GIFLIST_CONFIG_PATH=/opt/thelistbot/config
+
+# Optional: Load environment variables from file
+EnvironmentFile=/opt/thelistbot/.env
+
+# Hardening options
+ProtectSystem=full
+PrivateTmp=true
+NoNewPrivileges=true
+
+[Install]
+WantedBy=multi-user.target
