@@ -1,0 +1,80 @@
+# Binaries for programs and plugins
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+theListBot
+
+# Test binary, built with `go test -c`
+*.test
+
+# Output of the go coverage tool
+*.out
+
+# Go workspace file
+go.work
+
+# Environment variables
+.env
+*.env
+
+# Log files
+*.log
+thelistbot.log
+logs/
+
+# Config directories and files
+.thelistbot/
+.DS_Store
+
+# Dependency directories
+/vendor/
+/Godeps/
+
+# Local config files 
+*.local.json
+*.local.yaml
+*.local.yml
+
+# Binary directory
+/bin/
+
+# Database files
+*.db
+*.sqlite
+*.sqlite3
+
+# IDE specific files
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# Debug files
+debug
+__debug_bin
+
+# Temporary files
+tmp/
+.tmp/
+temp/
+
+# Operating System Files
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+Icon
+._*
+
+# Windows
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+
+# Linux
+*~
+.directory
