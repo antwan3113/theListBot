@@ -8,7 +8,9 @@ import (
 	"regexp"
 	"strings"
 	"syscall"
+	"theListBot/internal/combo" // Import the combo package
 	"theListBot/internal/giflist"
+	"time"
 
 	"github.com/bwmarrin/discordgo"
 	"github.com/joho/godotenv"
@@ -17,13 +19,15 @@ import (
 type Server struct {
 	discordSession *discordgo.Session
 	gifList        *giflist.GifList
+	comboTracker   *combo.ComboTracker // Add the combo tracker
 	done           chan os.Signal
 }
 
 func NewServer() *Server {
 	return &Server{
-		gifList: giflist.NewGifList(),
-		done:    make(chan os.Signal, 1),
+		gifList:      giflist.NewGifList(),
+		comboTracker: combo.NewComboTracker(600 * time.Second), // Initialize the combo tracker
+		done:         make(chan os.Signal, 1),
 	}
 }
 
@@ -57,6 +61,9 @@ func (s *Server) Start() {
 
 	log.Println("Bot is now running and listening for commands. Press CTRL+C to exit.")
 
+	// Start the daily reset ticker
+	go s.dailyResetTicker()
+
 	// Wait for a termination signal
 	signal.Notify(s.done, syscall.SIGINT, syscall.SIGTERM, os.Interrupt)
 	<-s.done
@@ -71,6 +78,22 @@ func (s *Server) Stop() {
 		s.discordSession.Close()
 	}
 	log.Println("Server shutdown complete")
+}
+
+// dailyResetTicker resets the daily counts at midnight
+func (s *Server) dailyResetTicker() {
+	now := time.Now()
+	midnight := time.Date(now.Year(), now.Month(), now.Day()+1, 0, 0, 0, 0, now.Location())
+	duration := midnight.Sub(now)
+
+	// Wait until midnight
+	time.Sleep(duration)
+
+	ticker := time.NewTicker(24 * time.Hour)
+	for range ticker.C {
+		s.comboTracker.ResetDailyCounts()
+		log.Println("Daily counts reset at midnight")
+	}
 }
 
 // messageHandler processes Discord message events
@@ -90,6 +113,13 @@ func (s *Server) messageHandler(session *discordgo.Session, m *discordgo.Message
 		return
 	}
 
+	// Handle combo commands
+	if strings.HasPrefix(m.Content, "!counts") {
+		log.Printf("Command from %s: %s", m.Author.Username, m.Content)
+		s.handleComboCommand(session, m)
+		return
+	}
+
 	// Check for 2-character codes in the message
 	s.processMessageForCodes(session, m)
 }
@@ -103,7 +133,7 @@ func (s *Server) processMessageForCodes(session *discordgo.Session, m *discordgo
 	// ^(?i) - Start of string + case insensitive
 	// ([a-zA-Z]{2}) - Two letters as our code
 	// (\b|$|[^a-zA-Z]) - Must be followed by word boundary, end of string, or non-letter
-	codePattern := regexp.MustCompile(`^(?i)([a-zA-Z]{2})(\b|$|[^a-zA-Z])`)
+	codePattern := regexp.MustCompile(`^(?i)([a-zA-Z0-9\.]+)$`)
 
 	// Debug regex logging removed
 	// log.Printf("Using regex pattern: %s", codePattern.String())
@@ -111,11 +141,15 @@ func (s *Server) processMessageForCodes(session *discordgo.Session, m *discordgo
 	// Find the match at the start of the message
 	match := codePattern.FindStringSubmatch(m.Content)
 
-	if match != nil && len(match) >= 2 {
+	if len(match) >= 2 {
 		code := strings.ToLower(match[1]) // Extract the code and convert to lowercase
 
 		// Only log when we've identified a code
 		log.Printf("Code match from %s: %s", m.Author.Username, code)
+
+		// Record the code usage and get the counts
+		dailyCount, userCombo, comboEvent := s.comboTracker.RecordCode(m.Author.ID, code)
+		log.Printf("Code %s used by %s. Daily count: %d, User combo: %d", code, m.Author.Username, dailyCount, userCombo)
 
 		if gifURL, found := s.gifList.GetGif(code); found {
 			log.Printf("Sending GIF for code %s: %s", code, gifURL)
@@ -124,6 +158,14 @@ func (s *Server) processMessageForCodes(session *discordgo.Session, m *discordgo
 			_, err := session.ChannelMessageSend(m.ChannelID, gifURL)
 			if err != nil {
 				log.Printf("Error sending GIF response: %v", err)
+			}
+
+			// Check if there is a combo event and send the combo message and GIF
+			if comboEvent != nil {
+				_, err = session.ChannelMessageSend(m.ChannelID, fmt.Sprintf("%s %s", comboEvent.Message, comboEvent.GifURL))
+				if err != nil {
+					log.Printf("Error sending combo message: %v", err)
+				}
 			}
 		} else {
 			log.Printf("No GIF found for code: %s", code)
@@ -251,9 +293,10 @@ func (s *Server) handleListCommand(session *discordgo.Session, m *discordgo.Mess
 			"`!list show [code]` - Show all GIFs for a specific code\n" +
 			"`!list add [code] [url]` - Add a GIF URL to a code\n" +
 			"`!list remove [code]` - Remove all GIFs for a code\n" +
-			"`!list remove [code] [url]` - Remove a specific GIF URL from a code\n\n" +
+			"`!list remove [code] [url]` - Remove a specific GIF URL from a code\n" +
+			"`!counts` - Display the daily code counts\n\n" + // Added combo command to help
 			"**Usage:**\n" +
-			"Type a 2-character code at the start of your message to trigger a random GIF\n" +
+			"Type a code at the start of your message to trigger a random GIF\n" +
 			"Example: `gg` or `ty everyone`"
 		session.ChannelMessageSend(m.ChannelID, helpMsg)
 
@@ -261,4 +304,20 @@ func (s *Server) handleListCommand(session *discordgo.Session, m *discordgo.Mess
 		log.Printf("Unknown list subcommand: %s", parts[1])
 		session.ChannelMessageSend(m.ChannelID, "Unknown command. Use `!list help` for help.")
 	}
+}
+
+// handleComboCommand displays the daily counts
+func (s *Server) handleComboCommand(session *discordgo.Session, m *discordgo.MessageCreate) {
+	counts := s.comboTracker.GetDailyCounts()
+	if len(counts) == 0 {
+		session.ChannelMessageSend(m.ChannelID, "No codes have been used today.")
+		return
+	}
+
+	message := "**Daily Code Counts:**\n"
+	for code, count := range counts {
+		message += fmt.Sprintf("`%s`: %d\n", code, count)
+	}
+
+	session.ChannelMessageSend(m.ChannelID, message)
 }
