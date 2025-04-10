@@ -24,9 +24,12 @@ type Server struct {
 }
 
 func NewServer() *Server {
+	// Define the file path for lifetime counts
+	filePath := "lifetime_counts.json"
+
 	return &Server{
 		gifList:      giflist.NewGifList(),
-		comboTracker: combo.NewComboTracker(600 * time.Second), // Initialize the combo tracker
+		comboTracker: combo.NewComboTracker(600*time.Second, filePath), // Pass the file path
 		done:         make(chan os.Signal, 1),
 	}
 }
@@ -77,6 +80,8 @@ func (s *Server) Stop() {
 		log.Println("Closing Discord session...")
 		s.discordSession.Close()
 	}
+	// Stop the combo tracker to save lifetime counts
+	s.comboTracker.Stop()
 	log.Println("Server shutdown complete")
 }
 
@@ -308,14 +313,21 @@ func (s *Server) handleListCommand(session *discordgo.Session, m *discordgo.Mess
 
 // handleComboCommand displays the daily counts
 func (s *Server) handleComboCommand(session *discordgo.Session, m *discordgo.MessageCreate) {
-	counts := s.comboTracker.GetDailyCounts()
-	if len(counts) == 0 {
-		session.ChannelMessageSend(m.ChannelID, "No codes have been used today.")
+	dailyCounts := s.comboTracker.GetDailyCounts()
+	lifetimeCounts := s.comboTracker.GetLifetimeCounts()
+
+	if len(dailyCounts) == 0 && len(lifetimeCounts) == 0 {
+		session.ChannelMessageSend(m.ChannelID, "No codes have been used yet.")
 		return
 	}
 
 	message := "**Daily Code Counts:**\n"
-	for code, count := range counts {
+	for code, count := range dailyCounts {
+		message += fmt.Sprintf("`%s`: %d\n", code, count)
+	}
+
+	message += "\n**Lifetime Code Counts:**\n"
+	for code, count := range lifetimeCounts {
 		message += fmt.Sprintf("`%s`: %d\n", code, count)
 	}
 

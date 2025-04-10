@@ -36,6 +36,7 @@ logs/
 *.local.json
 *.local.yaml
 *.local.yml
+*.json
 
 # Binary directory
 /bin/
