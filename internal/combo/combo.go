@@ -44,12 +44,26 @@ func (c *ComboTracker) RecordCode(userID string, code string) (int, int, *ComboE
 	// Check for consecutive usage
 	lastUsedTime, ok := c.lastUsed[userID][code]
 	if ok && time.Since(lastUsedTime) <= c.consecutiveTime {
-		c.userCombos[userID]++
+		//If the last used code is different from the current code, reset the combo
+		var lastUsedCode string
+		for k := range c.lastUsed[userID] {
+			lastUsedCode = k
+			break // We only need the last used code, assuming iteration order is consistent
+		}
+		if lastUsedCode != "" && lastUsedCode != code {
+			c.userCombos[userID] = 1
+		} else {
+			c.userCombos[userID]++
+		}
+
 	} else {
 		c.userCombos[userID] = 1
 	}
 
 	// Update last used time
+	for k := range c.lastUsed[userID] {
+		delete(c.lastUsed[userID], k)
+	}
 	c.lastUsed[userID][code] = time.Now()
 
 	// Determine combo event
