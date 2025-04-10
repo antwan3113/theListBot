@@ -152,9 +152,9 @@ func (g *GifList) SaveToFile() error {
 
 // AddGif adds a GIF URL to a code's list, creates the code if it doesn't exist
 func (g *GifList) AddGif(code string, gifURL string) error {
-	if len(code) != 2 {
+	if len(code) > 10 {
 		log.Printf("Rejected invalid code length: %s (%d chars)", code, len(code))
-		return fmt.Errorf("code must be exactly 2 characters")
+		return fmt.Errorf("code must be less than 10 characters")
 	}
 
 	g.mutex.Lock()
